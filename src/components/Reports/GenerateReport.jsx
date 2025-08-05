@@ -2,6 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { Save, Download, Eye, Upload, QrCode, X, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 
 const GenerateReport = () => {
+  const saveDraftToArchive = () => {
+  const archive = {
+    patient,
+    scanParameters,
+    clinicInfo,
+    clinicalNotes,
+    aiModelOutput,
+    timestamp: new Date().toISOString(),
+  };
+
+  const existing = JSON.parse(localStorage.getItem('archivedReports') || '[]');
+  existing.push(archive);
+  localStorage.setItem('archivedReports', JSON.stringify(existing));
+  alert('Draft saved to archive!');
+};
+
   const [patient, setPatient] = useState({
     id: '',
     name: '',
