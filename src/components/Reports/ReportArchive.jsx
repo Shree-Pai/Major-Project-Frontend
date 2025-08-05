@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, Download, Eye, Calendar, User } from 'lucide-react';
+import { Search, Filter, Download, Eye, Calendar, User, CheckCircle, X } from 'lucide-react';
 
 const ReportArchive = () => {
   const navigate = useNavigate();
@@ -22,13 +22,42 @@ const ReportArchive = () => {
     return matchesSearch && matchesStatus;
   });
 
+  const promoteToFinal = (report) => {
+    if (window.confirm('Are you sure you want to finalize this report? It will be moved to the Dashboard as a reviewed report.')) {
+      // Add to final reports
+      const savedFinalReports = JSON.parse(localStorage.getItem('fetalFinalReports') || '[]');
+      const finalReport = {
+        ...report,
+        status: 'Reviewed',
+        reviewedAt: new Date().toISOString()
+      };
+      savedFinalReports.push(finalReport);
+      localStorage.setItem('fetalFinalReports', JSON.stringify(savedFinalReports));
+      
+      // Remove from drafts
+      const updatedReports = reports.filter(r => r.id !== report.id);
+      setReports(updatedReports);
+      localStorage.setItem('fetalReportsArchive', JSON.stringify(updatedReports));
+      
+      alert('Report finalized and moved to Dashboard!');
+    }
+  };
+
+  const deleteReport = (reportId) => {
+    if (window.confirm('Are you sure you want to delete this draft? This action cannot be undone.')) {
+      const updatedReports = reports.filter(report => report.id !== reportId);
+      setReports(updatedReports);
+      localStorage.setItem('fetalReportsArchive', JSON.stringify(updatedReports));
+    }
+  };
+
   return (
     <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">Report Archive</h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Access and manage all previous ultrasound reports
+            Access and manage draft reports (pending review)
           </p>
         </div>
       </div>
@@ -290,9 +319,9 @@ const ReportArchive = () => {
       {filteredReports.length === 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-12 text-center">
           <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No reports found</h3>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No draft reports found</h3>
           <p className="text-gray-500 dark:text-gray-400">
-            Try adjusting your search terms or filters
+            Draft reports will appear here before being finalized
           </p>
         </div>
       )}

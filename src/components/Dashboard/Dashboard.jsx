@@ -9,23 +9,26 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [reports, setReports] = useState([]);
+  const [finalReports, setFinalReports] = useState([]);
   const [stats, setStats] = useState([]);
 
   // Load reports from localStorage
   useEffect(() => {
-    const savedReports = JSON.parse(localStorage.getItem('fetalReportsArchive') || '[]');
-    setReports(savedReports);
+    const savedDraftReports = JSON.parse(localStorage.getItem('fetalReportsArchive') || '[]');
+    const savedFinalReports = JSON.parse(localStorage.getItem('fetalFinalReports') || '[]');
+    setReports(savedDraftReports);
+    setFinalReports(savedFinalReports);
     
     // Calculate real statistics
-    const totalReports = savedReports.length;
-    const thisMonth = savedReports.filter(report => {
+    const totalReports = savedFinalReports.length;
+    const thisMonth = savedFinalReports.filter(report => {
       const reportDate = new Date(report.date);
       const now = new Date();
       return reportDate.getMonth() === now.getMonth() && reportDate.getFullYear() === now.getFullYear();
     }).length;
     
-    const pendingReview = savedReports.filter(report => report.status === 'Pending Review').length;
-    const completedReports = savedReports.filter(report => report.status === 'Completed').length;
+    const pendingReview = savedDraftReports.length; // All drafts are pending review
+    const completedReports = savedFinalReports.length; // All final reports are completed
     
     setStats([
       { title: 'Total Reports', value: totalReports.toString(), icon: FileText, color: 'blue', change: '+12%' },
@@ -35,7 +38,7 @@ const Dashboard = () => {
     ]);
   }, []);
 
-  const filteredReports = reports.filter(report =>
+  const filteredReports = finalReports.filter(report =>
     report.patient.toLowerCase().includes(searchTerm.toLowerCase()) ||
     report.patientId.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -44,25 +47,140 @@ const Dashboard = () => {
     navigate('/generate-report');
   };
 
-  const handleViewReport = (report) => {
-    // Save the selected report to localStorage so GenerateReport can load it
-    localStorage.setItem('selectedReportForEdit', JSON.stringify(report));
-    navigate('/generate-report');
+  const handleDeleteReport = (reportId) => {
+    if (window.confirm('Are you sure you want to delete this final report? This action cannot be undone.')) {
+      const updatedReports = finalReports.filter(report => report.id !== reportId);
+      setFinalReports(updatedReports);
+      localStorage.setItem('fetalFinalReports', JSON.stringify(updatedReports));
+      
+      // Update stats
+      const totalReports = updatedReports.length;
+      const thisMonth = updatedReports.filter(report => {
+        const reportDate = new Date(report.date);
+        const now = new Date();
+        return reportDate.getMonth() === now.getMonth() && reportDate.getFullYear() === now.getFullYear();
+      }).length;
+      
+      const pendingReview = reports.length;
+      const completedReports = updatedReports.length;
+      
+      setStats([
+        { title: 'Total Reports', value: totalReports.toString(), icon: FileText, color: 'blue', change: '+12%' },
+        { title: 'This Month', value: thisMonth.toString(), icon: Calendar, color: 'green', change: '+8%' },
+        { title: 'Pending Review', value: pendingReview.toString(), icon: Clock, color: 'yellow', change: '-5%' },
+        { title: 'Completed', value: completedReports.toString(), icon: Users, color: 'purple', change: '+15%' },
+      ]);
+    }
   };
 
   const handleDownloadReport = (report) => {
-    const doc = new jsPDF();
-    doc.text('Ultrasound Fetal Scan Report', 10, 10);
-    doc.text(`Patient Name: ${report.patient}`, 10, 20);
-    doc.text(`Patient ID: ${report.patientId}`, 10, 30);
-    doc.text(`Gestational Age: ${report.gestationalAge}`, 10, 40);
-    doc.text(`Date: ${report.date}`, 10, 50);
-    doc.text(`Status: ${report.status}`, 10, 60);
-    doc.save(`report_${report.patientId || report.id}.pdf`);
+    // Generate and download PDF for this report using the same format as GenerateReport
+    import("jspdf").then((jsPDFModule) => {
+      const { jsPDF } = jsPDFModule;
+      const doc = new jsPDF();
+      
+      const reportData = report.reportData;
+      const clinicInfo = reportData.clinicInfo;
+      const patient = reportData.patient;
+      const aiModelOutput = reportData.aiModelOutput;
+      const scanParameters = reportData.scanParameters;
+      const clinicalNotes = reportData.clinicalNotes;
+      
+      // Header
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text(clinicInfo.name, 105, 15, { align: 'center' });
+      
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "normal");
+      doc.text(clinicInfo.department, 105, 23, { align: 'center' });
+      doc.text(clinicInfo.address, 105, 31, { align: 'center' });
+      
+      // Patient Info Table
+      doc.setFontSize(10);
+      let y = 45;
+      
+      // Table borders and content
+      doc.rect(10, y, 190, 25);
+      doc.line(70, y, 70, y + 25);
+      doc.line(130, y, 130, y + 25);
+      doc.line(10, y + 8, 200, y + 8);
+      doc.line(10, y + 16, 200, y + 16);
+      
+      doc.text("Patient name", 12, y + 6);
+      doc.text(patient.name || "", 72, y + 6);
+      doc.text(`Age/Sex: ${patient.age} Years / ${patient.sex || ""}`, 132, y + 6);
+      
+      doc.text("Patient ID", 12, y + 14);
+      doc.text(patient.patientId || "", 72, y + 14);
+      doc.text("Visit date", 132, y + 14);
+      
+      doc.text("Referred by", 12, y + 22);
+      doc.text(patient.referredBy || "", 72, y + 22);
+      doc.text(patient.visitDate || "", 155, y + 14);
+      
+      // LMP Info
+      y += 30;
+      doc.text(`LMP date: ${patient.lmp}, LMP EDD: ${patient.lmp}[${patient.gestationalAge}]`, 12, y);
+      
+      // Report Title
+      y += 10;
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("OB - First Trimester Scan Report", 105, y, { align: 'center' });
+      
+      // Add image if available
+      if (report.image) {
+        try {
+          doc.addImage(report.image, "JPEG", 130, 80, 60, 60);
+        } catch (error) {
+          console.log("Could not add image to PDF");
+        }
+      }
+      
+      // Continue with rest of content...
+      y += 15;
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Indication(s)", 12, y);
+      y += 5;
+      doc.setFont("helvetica", "normal");
+      doc.text(aiModelOutput.indications, 12, y);
+      
+      // AI Detected Structures
+      y += 20;
+      doc.setFont("helvetica", "bold");
+      doc.text("AI Detected Structures", 12, y);
+      y += 5;
+      doc.setFont("helvetica", "normal");
+      
+      Object.entries(aiModelOutput.detectedStructures).forEach(([structure, confidence]) => {
+        doc.text(`${structure}: ${confidence}% confidence`, 12, y);
+        y += 5;
+      });
+      
+      // Clinical Notes
+      if (clinicalNotes) {
+        y += 5;
+        doc.setFont("helvetica", "bold");
+        doc.text("Additional Clinical Notes", 12, y);
+        y += 5;
+        doc.setFont("helvetica", "normal");
+        const lines = doc.splitTextToSize(clinicalNotes, 180);
+        doc.text(lines, 12, y);
+      }
+      
+      // Footer
+      doc.setFontSize(8);
+      doc.text(`Page #1 - ${new Date().toLocaleString()}`, 12, 280);
+      doc.text(`FOR APPOINTMENTS KINDLY CONTACT US AT 7904513421 / 7358771733`, 105, 280, { align: 'center' });
+      
+      doc.save(`final_report_${report.patientId || report.id}.pdf`);
+    });
   };
 
   // Get recent reports (last 5)
-  const recentReports = reports.slice(0, 5);
+  const recentReports = finalReports.slice(0, 5);
 
   return (
     <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
@@ -97,7 +215,7 @@ const Dashboard = () => {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
         <div className="p-4 lg:p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Recent Reports</h2>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Final Reports (Reviewed)</h2>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <input
@@ -125,7 +243,7 @@ const Dashboard = () => {
                   Gestational Age
                 </th>
                 <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider hidden md:table-cell">
-                  Date
+                  Reviewed Date
                 </th>
                 <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Status
@@ -157,30 +275,22 @@ const Dashboard = () => {
                       {report.date}
                     </td>
                     <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        report.status === 'Completed' 
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
-                          : report.status === 'Pending Review'
-                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
-                          : report.status === 'Draft'
-                          ? 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400'
-                          : 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
-                      }`}>
+                      <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
                         {report.status}
                       </span>
                     </td>
                     <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <button
-                        onClick={() => handleViewReport(report)}
-                        className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4"
-                      >
-                        View
-                      </button>
-                      <button
                         onClick={() => handleDownloadReport(report)}
-                        className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
+                        className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 mr-4"
                       >
                         Download
+                      </button>
+                      <button
+                        onClick={() => handleDeleteReport(report.id)}
+                        className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                      >
+                        Delete
                       </button>
                     </td>
                   </tr>
@@ -189,8 +299,8 @@ const Dashboard = () => {
                 <tr>
                   <td colSpan="6" className="px-4 lg:px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                     <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                    <p className="text-lg font-medium">No reports found</p>
-                    <p className="text-sm">Start by generating your first report</p>
+                    <p className="text-lg font-medium">No final reports found</p>
+                    <p className="text-sm">Final reports will appear here after being reviewed</p>
                   </td>
                 </tr>
               )}

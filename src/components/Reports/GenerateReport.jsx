@@ -892,43 +892,26 @@ const GenerateReport = () => {
           Clear Draft
         </button>
         <button
-          onClick={() => {
-            // Save to reports archive
-            const savedReports = JSON.parse(localStorage.getItem('fetalReportsArchive') || '[]');
-            const newReport = {
-              id: Date.now().toString(),
-              patient: patient.name,
-              patientId: patient.patientId,
-              gestationalAge: patient.gestationalAge,
-              date: new Date().toISOString().split('T')[0],
-              status: 'Draft',
-              createdBy: 'Current User', // This would ideally come from auth context
-              // We could also save a thumbnail or reference to the image
-              image: aiImage || 'https://images.pexels.com/photos/356079/pexels-photo-356079.jpeg',
-              // Save the full report data for detailed view
-              reportData: {
-                patient,
-                scanParameters,
-                clinicInfo,
-                clinicalNotes,
-                aiModelOutput
-              }
-            };
-            savedReports.push(newReport);
-            localStorage.setItem('fetalReportsArchive', JSON.stringify(savedReports));
-            alert('Report saved to archive successfully!');
-          }}
+          onClick={saveDraftToArchive}
           className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center justify-center"
         >
           <Save className="h-4 w-4 mr-2" />
           Save Draft
         </button>
         <button
+          onClick={saveAsFinalReport}
+          className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center justify-center"
+        >
+          <CheckCircle className="h-4 w-4 mr-2" />
+          Save Final Report
+        </button>
+        <button
           onClick={generatePDF}
+          disabled={isSubmitting}
           className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center justify-center"
         >
           <Download className="h-4 w-4 mr-2" />
-          Generate Report
+          {isSubmitting ? 'Generating...' : 'Generate PDF'}
         </button>
       </div>
     </div>
