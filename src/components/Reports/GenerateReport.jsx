@@ -195,15 +195,15 @@ const GenerateReport = () => {
   const validatePatientData = () => {
     const errors = {};
     
-    if (!patient.name.trim()) {
+    if (!patient.name || !patient.name.trim()) {
       errors.patientName = 'Patient name is required';
     }
     
-    if (!patient.patientId.trim()) {
+    if (!patient.patientId || !patient.patientId.trim()) {
       errors.patientId = 'Patient ID is required';
     }
     
-    if (patient.age < 12 || patient.age > 60) {
+    if (!patient.age || patient.age < 12 || patient.age > 60) {
       errors.age = 'Age must be between 12 and 60 years';
     }
     
@@ -215,7 +215,7 @@ const GenerateReport = () => {
       errors.visitDate = 'Visit date is required';
     }
     
-    if (!patient.gestationalAge.trim()) {
+    if (!patient.gestationalAge || !patient.gestationalAge.trim()) {
       errors.gestationalAge = 'Gestational age is required';
     }
     
@@ -229,7 +229,7 @@ const GenerateReport = () => {
   const validateScanParameters = () => {
     const errors = {};
     
-    if (scanParameters.fhr < 100 || scanParameters.fhr > 200) {
+    if (!scanParameters.fhr || scanParameters.fhr < 100 || scanParameters.fhr > 200) {
       errors.fhr = 'Fetal heart rate should be between 100-200 bpm';
     }
     
