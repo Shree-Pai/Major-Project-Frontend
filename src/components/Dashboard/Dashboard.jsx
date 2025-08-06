@@ -39,8 +39,8 @@ const Dashboard = () => {
   }, []);
 
   const filteredReports = finalReports.filter(report =>
-    report.patient.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    report.patientId.toLowerCase().includes(searchTerm.toLowerCase())
+    (report.patient?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (report.patientId?.toLowerCase() || '').includes(searchTerm.toLowerCase())
   );
 
   const handleGenerateNewReport = () => {

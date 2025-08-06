@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Download, Eye, Upload, QrCode, X, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Save, Download, Upload, QrCode, X, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const GenerateReport = () => {
@@ -12,12 +12,13 @@ const GenerateReport = () => {
     clinicInfo,
     clinicalNotes,
     aiModelOutput,
+    image: aiImage,
     timestamp: new Date().toISOString(),
   };
 
-  const existing = JSON.parse(localStorage.getItem('archivedReports') || '[]');
+  const existing = JSON.parse(localStorage.getItem('fetalReportsArchive') || '[]');
   existing.push(archive);
-  localStorage.setItem('archivedReports', JSON.stringify(existing));
+  localStorage.setItem('fetalReportsArchive', JSON.stringify(existing));
   alert('Draft saved to archive!');
 };
 
@@ -54,7 +55,6 @@ const GenerateReport = () => {
 
   const [clinicalNotes, setClinicalNotes] = useState('');
   const [aiImage, setAiImage] = useState('https://images.pexels.com/photos/356079/pexels-photo-356079.jpeg');
-  const [showPreview, setShowPreview] = useState(false);
   const [hasSavedDraft, setHasSavedDraft] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,6 +80,8 @@ const GenerateReport = () => {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [clinicalWarnings, setClinicalWarnings] = useState([]);
+  const [formResetKey, setFormResetKey] = useState(0);
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
 
   const saveAsFinalReport = () => {
     if (!validateForm()) {
@@ -237,6 +239,7 @@ const GenerateReport = () => {
 
   // Load saved data from localStorage on component mount
   useEffect(() => {
+    setIsLoadingReport(true);
     // First check if there's a selected report from the archive
     const selectedReport = localStorage.getItem('selectedReportForEdit');
     if (selectedReport) {
@@ -250,9 +253,18 @@ const GenerateReport = () => {
           if (reportData.clinicInfo) setClinicInfo(reportData.clinicInfo);
           if (reportData.clinicalNotes) setClinicalNotes(reportData.clinicalNotes);
           if (reportData.aiModelOutput) setAiModelOutput(reportData.aiModelOutput);
+          if (report.image) setAiImage(report.image);
+        } else {
+          if (report.patient) setPatient(report.patient);
+          if (report.scanParameters) setScanParameters(report.scanParameters);
+          if (report.clinicInfo) setClinicInfo(report.clinicInfo);
+          if (report.clinicalNotes) setClinicalNotes(report.clinicalNotes);
+          if (report.aiModelOutput) setAiModelOutput(report.aiModelOutput);
+          if (report.image) setAiImage(report.image);
         }
         // Remove the selected report from localStorage so it's not loaded again
         localStorage.removeItem('selectedReportForEdit');
+        setFormResetKey(prev => prev + 1);
       } catch (error) {
         console.error('Error parsing selected report:', error);
       }
@@ -268,25 +280,30 @@ const GenerateReport = () => {
           if (draftData.clinicalNotes) setClinicalNotes(draftData.clinicalNotes);
           if (draftData.aiModelOutput) setAiModelOutput(draftData.aiModelOutput);
           setHasSavedDraft(true);
+          setFormResetKey(prev => prev + 1);
         } catch (error) {
           console.error('Error parsing saved draft:', error);
         }
       }
     }
+    // Set loading to false after a short delay to allow state updates to complete
+    setTimeout(() => setIsLoadingReport(false), 100);
   }, []);
 
-  // Save data to localStorage whenever it changes
+  // Save data to localStorage whenever it changes (but not when loading a report)
   useEffect(() => {
-    const draftData = {
-      patient,
-      scanParameters,
-      clinicInfo,
-      clinicalNotes,
-      aiModelOutput
-    };
-    localStorage.setItem('fetalReportDraft', JSON.stringify(draftData));
-    setHasSavedDraft(true);
-  }, [patient, scanParameters, clinicInfo, clinicalNotes, aiModelOutput]);
+    if (!isLoadingReport) {
+      const draftData = {
+        patient,
+        scanParameters,
+        clinicInfo,
+        clinicalNotes,
+        aiModelOutput
+      };
+      localStorage.setItem('fetalReportDraft', JSON.stringify(draftData));
+      setHasSavedDraft(true);
+    }
+  }, [patient, scanParameters, clinicInfo, clinicalNotes, aiModelOutput, isLoadingReport]);
 
   // Check for clinical warnings when data changes
   useEffect(() => {
@@ -344,216 +361,198 @@ const GenerateReport = () => {
     
     import("jspdf").then((jsPDFModule) => {
       const { jsPDF } = jsPDFModule;
-      const doc = new jsPDF();
+      // Create PDF with A4 size and proper margins for printing
+      const doc = new jsPDF('p', 'mm', 'a4');
       
-      // Header
-      doc.setFontSize(16);
+      // Set margins for print-friendly layout
+      const margin = 15;
+      const pageWidth = doc.internal.pageSize.width;
+      const contentWidth = pageWidth - (2 * margin);
+      let y = margin;
+      
+      // Header with clinic information
+      doc.setFontSize(18);
       doc.setFont("helvetica", "bold");
-      doc.text(clinicInfo.name, 105, 15, { align: 'center' });
+      doc.text(clinicInfo.name, pageWidth / 2, y, { align: 'center' });
+      y += 8;
       
       doc.setFontSize(12);
       doc.setFont("helvetica", "normal");
-      doc.text(clinicInfo.department, 105, 23, { align: 'center' });
-      doc.text(clinicInfo.address, 105, 31, { align: 'center' });
+      doc.text(clinicInfo.department, pageWidth / 2, y, { align: 'center' });
+      y += 6;
+      doc.text(clinicInfo.address, pageWidth / 2, y, { align: 'center' });
+      y += 6;
+      doc.text(`Phone: ${clinicInfo.phone} | Email: ${clinicInfo.email}`, pageWidth / 2, y, { align: 'center' });
+      y += 6;
+      doc.text(`Website: ${clinicInfo.website}`, pageWidth / 2, y, { align: 'center' });
       
-      // Patient Info Table
-      doc.setFontSize(10);
-      let y = 45;
-      
-      // Table borders and content
-      doc.rect(10, y, 190, 25);
-      doc.line(70, y, 70, y + 25); // Vertical line
-      doc.line(130, y, 130, y + 25); // Vertical line
-      doc.line(10, y + 8, 200, y + 8); // Horizontal line
-      doc.line(10, y + 16, 200, y + 16); // Horizontal line
-      
-      doc.text("Patient name", 12, y + 6);
-      doc.text(patient.name || "", 72, y + 6);
-      doc.text(`Age/Sex: ${patient.age} Years / ${patient.sex || ""}`, 132, y + 6);
-      
-      doc.text("Patient ID", 12, y + 14);
-      doc.text(patient.patientId || "", 72, y + 14);
-      doc.text("Visit date", 132, y + 14);
-      
-      doc.text("Referred by", 12, y + 22);
-      doc.text(patient.referredBy || "", 72, y + 22);
-      doc.text(patient.visitDate || "", 155, y + 14);
-      
-      // LMP Info
-      y += 30;
-      doc.text(`LMP date: ${patient.lmp}, LMP EDD: ${patient.lmp}[${patient.gestationalAge}]`, 12, y);
+      // Separator line
+      y += 8;
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 8;
       
       // Report Title
-      y += 10;
-      doc.setFontSize(14);
+      doc.setFontSize(16);
       doc.setFont("helvetica", "bold");
-      doc.text("OB - First Trimester Scan Report", 105, y, { align: 'center' });
+      doc.text("OBSTETRIC ULTRASOUND REPORT", pageWidth / 2, y, { align: 'center' });
+      y += 10;
       
-      // Indications Section
-      y += 15;
+      // Patient Information Section
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("PATIENT INFORMATION", margin, y);
+      y += 6;
+      
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.text("Indication(s)", 12, y);
-      y += 5;
-      doc.setFont("helvetica", "normal");
-      doc.text(aiModelOutput.indications, 12, y);
       
-      y += 5;
-      doc.text(aiModelOutput.scanType, 12, y);
-      y += 5;
-      doc.text(`Route: ${aiModelOutput.route}`, 12, y);
-      y += 5;
-      doc.text(aiModelOutput.gestation, 12, y);
+      // Patient info in two columns
+      const col1 = margin;
+      const col2 = margin + contentWidth / 2;
       
-      // Medical Notes
-      y += 10;
+      doc.text(`Name: ${patient.name}`, col1, y);
+      doc.text(`Age: ${patient.age} Years`, col2, y);
+      y += 5;
+      
+      doc.text(`Patient ID: ${patient.patientId}`, col1, y);
+      doc.text(`Sex: ${patient.sex}`, col2, y);
+      y += 5;
+      
+      doc.text(`Visit Date: ${patient.visitDate}`, col1, y);
+      doc.text(`Referred By: ${patient.referredBy}`, col2, y);
+      y += 5;
+      
+      doc.text(`LMP: ${patient.lmp}`, col1, y);
+      doc.text(`Gestational Age: ${patient.gestationalAge}`, col2, y);
+      y += 8;
+      
+      // Clinical Information
       doc.setFont("helvetica", "bold");
-      doc.text("Medical notes", 12, y);
-      y += 5;
+      doc.text("CLINICAL INFORMATION", margin, y);
+      y += 6;
+      
       doc.setFont("helvetica", "normal");
-      doc.text(`Blood group: A1B+ve Height: 159 cms Weight: 48.2kgs`, 12, y);
+      doc.text(`Indications: ${aiModelOutput.indications}`, margin, y);
       y += 5;
-      doc.text(`Marital History: 4 years Consanguity: NCM`, 12, y);
+      doc.text(`Scan Type: ${aiModelOutput.scanType}`, margin, y);
       y += 5;
-      doc.text(`Menstrual History: Regular`, 12, y);
+      doc.text(`Route: ${aiModelOutput.route}`, margin, y);
       y += 5;
-      doc.text(`Gravida: 2 Para: 1 Live: 1 Abortion: 0`, 12, y);
-  
+      doc.text(`Gestation: ${aiModelOutput.gestation}`, margin, y);
+      y += 8;
+      
+      // Scan Parameters
+      doc.setFont("helvetica", "bold");
+      doc.text("SCAN PARAMETERS", margin, y);
+      y += 6;
+      
+      doc.setFont("helvetica", "normal");
+      doc.text(`CRL: ${scanParameters.crl} mm`, col1, y);
+      doc.text(`BPD: ${scanParameters.bpd} mm`, col2, y);
+      y += 5;
+      doc.text(`HC: ${scanParameters.hc} mm`, col1, y);
+      doc.text(`AC: ${scanParameters.ac} mm`, col2, y);
+      y += 5;
+      doc.text(`FL: ${scanParameters.fl} mm`, col1, y);
+      doc.text(`FHR: ${scanParameters.fhr} bpm`, col2, y);
+      y += 5;
+      doc.text(`Uterine Artery PI: ${scanParameters.uterineArteryPI}`, col1, y);
+      y += 8;
       
       // Fetal Survey
-      y += 5;
       doc.setFont("helvetica", "bold");
-      doc.text("Fetal Survey", 12, y);
-      y += 5;
-      doc.setFont("helvetica", "normal");
-      doc.text(aiModelOutput.placentaLocation, 12, y);
-      y += 5;
-      doc.text(aiModelOutput.liquorStatus, 12, y);
-      y += 5;
-      doc.text(aiModelOutput.fetalActivity, 12, y);
-      y += 5;
-      doc.text(aiModelOutput.cardiacActivity, 12, y);
-      y += 5;
-      doc.text(`Fetal heart rate - ${scanParameters.fhr} bpm`, 12, y);
+      doc.text("FETAL SURVEY", margin, y);
+      y += 6;
       
-    
+      doc.setFont("helvetica", "normal");
+      doc.text(aiModelOutput.placentaLocation, margin, y);
+      y += 5;
+      doc.text(aiModelOutput.liquorStatus, margin, y);
+      y += 5;
+      doc.text(aiModelOutput.fetalActivity, margin, y);
+      y += 5;
+      doc.text(aiModelOutput.cardiacActivity, margin, y);
+      y += 8;
       
       // AI Detected Structures
-      y += 10;
       doc.setFont("helvetica", "bold");
-      doc.text("AI Detected Structures", 12, y);
-      y += 5;
+      doc.text("AI DETECTED STRUCTURES", margin, y);
+      y += 6;
+      
       doc.setFont("helvetica", "normal");
-      
       Object.entries(aiModelOutput.detectedStructures).forEach(([structure, confidence]) => {
-        doc.text(`${structure}: ${confidence}% confidence`, 12, y);
-        y += 5;
+        doc.text(`${structure}: ${confidence}% confidence`, margin, y);
+        y += 4;
       });
+      y += 6;
       
-      // Clinical Notes
-      if (clinicalNotes) {
-        y += 5;
-        doc.setFont("helvetica", "bold");
-        doc.text("Additional Clinical Notes", 12, y);
-        y += 5;
-        doc.setFont("helvetica", "normal");
-        const lines = doc.splitTextToSize(clinicalNotes, 180);
-        doc.text(lines, 12, y);
-        y += lines.length * 5;
-      }
-      
-      // Footer
-      doc.setFontSize(8);
-      doc.text(`Page #1 - ${new Date().toLocaleString()}`, 12, 280);
-      doc.text(`FOR APPOINTMENTS KINDLY CONTACT US AT 7904513421 / 7358771733`, 105, 280, { align: 'center' });
-      
-      // Add image if available
-      if (aiImage) {
+      // Add image beside AI Detected Structures
+      if (aiImage && aiImage !== 'https://images.pexels.com/photos/356079/pexels-photo-356079.jpeg') {
         try {
-          doc.addImage(aiImage, "JPEG", 130, 80, 60, 60);
+          // Add image on the right side of AI Detected Structures
+          const imageWidth = 80;
+          const imageHeight = 60;
+          const imageX = pageWidth - margin - imageWidth;
+          const imageY = y - 45; // Position higher, at the beginning of AI structures
+          doc.addImage(aiImage, "JPEG", imageX, imageY, imageWidth, imageHeight);
+          
+          // Add image caption
+          doc.setFontSize(8);
+          doc.setFont("helvetica", "bold");
+          doc.text("SCAN IMAGE", imageX + (imageWidth / 2), imageY + imageHeight + 3, { align: 'center' });
         } catch (error) {
           console.log("Could not add image to PDF");
         }
       }
       
-      doc.save("fetal_scan_report.pdf");
+      // Clinical Notes
+      if (clinicalNotes && clinicalNotes.trim()) {
+        doc.setFont("helvetica", "bold");
+        doc.text("CLINICAL NOTES", margin, y);
+        y += 6;
+        
+        doc.setFont("helvetica", "normal");
+        const notesLines = doc.splitTextToSize(clinicalNotes, contentWidth);
+        doc.text(notesLines, margin, y);
+        y += notesLines.length * 4;
+        y += 6;
+      }
+      
+      // Footer
+      y += 10;
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 5;
+      
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Report generated on: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`, margin, y);
+      doc.text(`Generated by: ${user?.name || 'System'}`, pageWidth - margin, y, { align: 'right' });
+      y += 4;
+      doc.text("FOR APPOINTMENTS CONTACT: 7904513421 / 7358771733", pageWidth / 2, y, { align: 'center' });
+      
+      // Save the PDF
+      const fileName = `Fetal_Scan_Report_${patient.name || patient.patientId || 'Unknown'}_${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(fileName);
+      setIsSubmitting(false);
     });
   };
 
-  const ReportPreview = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-          <h3 className="text-lg font-semibold">Report Preview</h3>
-          <button onClick={() => setShowPreview(false)} className="text-gray-500 hover:text-gray-700">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        
-        <div className="p-6 space-y-4">
-          {/* Header */}
-          <div className="text-center border-b pb-4">
-            <h1 className="text-xl font-bold">{clinicInfo.name}</h1>
-            <p className="text-sm">{clinicInfo.department}</p>
-            <p className="text-sm">{clinicInfo.address}</p>
-          </div>
-          
-          {/* Patient Info */}
-          <div className="grid grid-cols-2 gap-4 p-4 border rounded">
-            <div>
-              <strong>Patient Name:</strong> {patient.name}
-            </div>
-            <div>
-              <strong>Age/Sex:</strong> {patient.age} Years / {patient.sex}
-            </div>
-            <div>
-              <strong>Patient ID:</strong> {patient.patientId}
-            </div>
-            <div>
-              <strong>Visit Date:</strong> {patient.visitDate}
-            </div>
-          </div>
-          
-          {/* AI Results */}
-          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded">
-            <h3 className="font-semibold mb-2">AI Detected Structures</h3>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              {Object.entries(aiModelOutput.detectedStructures).map(([structure, confidence]) => (
-                <div key={structure}>
-                  {structure}: {confidence}% confidence
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
-    <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
-      {showPreview && <ReportPreview />}
+    <div key={formResetKey} className="p-4 lg:p-6 space-y-4 lg:space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">Generate Professional Report</h1>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Create a professional ultrasound fetal scan report with AI assistance
-            </p>
-            {hasSavedDraft && (
-              <div className="mt-2 flex items-center text-sm text-green-600 dark:text-green-400">
-                <CheckCircle className="h-4 w-4 mr-1" />
-                Draft auto-saved
-              </div>
-            )}
-          </div>
+        <div>
+          <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">Generate Professional Report</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Create a professional ultrasound fetal scan report with AI assistance
+          </p>
+          {hasSavedDraft && (
+            <div className="mt-2 flex items-center text-sm text-green-600 dark:text-green-400">
+              <CheckCircle className="h-4 w-4 mr-1" />
+              Draft auto-saved
+            </div>
+          )}
+        </div>
         <div className="flex flex-col sm:flex-row gap-3">
-          <button
-            onClick={() => setShowPreview(true)}
-            className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center"
-          >
-            <Eye className="h-4 w-4 mr-2" />
-            Preview
-          </button>
           <button
             onClick={generatePDF}
             className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center"
@@ -801,6 +800,106 @@ const GenerateReport = () => {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Scan Parameters */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-4 lg:p-6">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Scan Parameters</h2>
+          <div className="space-y-3 lg:space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  CRL (mm)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={scanParameters.crl || ''}
+                  onChange={(e) => handleScanParameterChange('crl', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="0.0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  BPD (mm)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={scanParameters.bpd || ''}
+                  onChange={(e) => handleScanParameterChange('bpd', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="0.0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  HC (mm)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={scanParameters.hc || ''}
+                  onChange={(e) => handleScanParameterChange('hc', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="0.0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  AC (mm)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={scanParameters.ac || ''}
+                  onChange={(e) => handleScanParameterChange('ac', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="0.0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  FL (mm)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={scanParameters.fl || ''}
+                  onChange={(e) => handleScanParameterChange('fl', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="0.0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  FHR (bpm)
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  value={scanParameters.fhr || ''}
+                  onChange={(e) => handleScanParameterChange('fhr', parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="0"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Uterine Artery PI
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                value={scanParameters.uterineArteryPI || ''}
+                onChange={(e) => handleScanParameterChange('uterineArteryPI', parseFloat(e.target.value) || 0)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="0.00"
+              />
             </div>
           </div>
         </div>

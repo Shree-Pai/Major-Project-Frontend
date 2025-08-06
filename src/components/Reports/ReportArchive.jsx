@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Search, Filter, Download, Eye, Calendar, User, CheckCircle, X } from 'lucide-react';
+import { Search, Filter, Download, Calendar, User, CheckCircle, X } from 'lucide-react';
 
 const ReportArchive = () => {
-  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [dateRange, setDateRange] = useState('all');
@@ -16,9 +14,9 @@ const ReportArchive = () => {
   }, []);
 
   const filteredReports = reports.filter(report => {
-    const matchesSearch = report.patient.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         report.patientId.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = filterStatus === 'all' || report.status.toLowerCase().includes(filterStatus.toLowerCase());
+    const matchesSearch = (report.patient?.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                         (report.patientId?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+    const matchesStatus = filterStatus === 'all' || (report.status?.toLowerCase() || '').includes(filterStatus.toLowerCase());
     return matchesSearch && matchesStatus;
   });
 
@@ -45,9 +43,46 @@ const ReportArchive = () => {
 
   const deleteReport = (reportId) => {
     if (window.confirm('Are you sure you want to delete this draft? This action cannot be undone.')) {
-      const updatedReports = reports.filter(report => report.id !== reportId);
-      setReports(updatedReports);
-      localStorage.setItem('fetalReportsArchive', JSON.stringify(updatedReports));
+      console.log('Attempting to delete report with ID:', reportId);
+      console.log('Current reports:', reports);
+      
+      // Find the report to delete using multiple possible ID fields
+      const reportToDelete = reports.find(report => 
+        report.id === reportId || 
+        report.timestamp === reportId ||
+        report.patient?.patientId === reportId
+      );
+      
+      console.log('Found report to delete:', reportToDelete);
+      
+      if (reportToDelete) {
+        // Remove the specific report from the array using a more precise filter
+        const updatedReports = reports.filter(report => {
+          // Check if this is the same report we want to delete
+          const isSameReport = (
+            (report.id && reportToDelete.id && report.id === reportToDelete.id) ||
+            (report.timestamp && reportToDelete.timestamp && report.timestamp === reportToDelete.timestamp) ||
+            (report.patient?.patientId && reportToDelete.patient?.patientId && 
+             report.patient.patientId === reportToDelete.patient.patientId)
+          );
+          
+          // Keep the report if it's NOT the same report we want to delete
+          return !isSameReport;
+        });
+        
+        console.log('Updated reports after deletion:', updatedReports);
+        
+        // Update state
+        setReports(updatedReports);
+        
+        // Update localStorage
+        localStorage.setItem('fetalReportsArchive', JSON.stringify(updatedReports));
+        
+        alert('Report deleted successfully!');
+      } else {
+        console.log('Report not found for ID:', reportId);
+        alert('Report not found!');
+      }
     }
   };
 
@@ -109,8 +144,8 @@ const ReportArchive = () => {
 
       {/* Reports Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
-        {filteredReports.map((report) => (
-          <div key={report.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-xl transition-shadow">
+        {filteredReports.map((report, idx) => (
+          <div key={report.id || idx} className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-xl transition-shadow">
             <div className="aspect-video bg-gray-100 dark:bg-gray-700 overflow-hidden">
               <img 
                 src={report.image} 
@@ -122,7 +157,7 @@ const ReportArchive = () => {
             <div className="p-3 lg:p-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-base lg:text-lg font-semibold text-gray-900 dark:text-white truncate">
-                  {report.patient}
+                  {report.patient?.name || ''}
                 </h3>
                 <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                   report.status === 'Completed' 
@@ -152,163 +187,203 @@ const ReportArchive = () => {
               <div className="flex flex-col sm:flex-row gap-2">
                 <button 
                   onClick={() => {
-                    // Save the selected report to localStorage so GenerateReport can load it
-                    localStorage.setItem('selectedReportForEdit', JSON.stringify(report));
-                    // Navigate to GenerateReport page using React Router
-                    navigate('/generate-report');
-                  }}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs lg:text-sm font-medium transition-colors flex items-center justify-center"
-                >
-                  <Eye className="h-3 w-3 mr-1" />
-                  View
-                </button>
-                <button 
-                  onClick={() => {
                     // Generate and download PDF for this report
                     import("jspdf").then((jsPDFModule) => {
                       const { jsPDF } = jsPDFModule;
-                      const doc = new jsPDF();
+                      // Create PDF with A4 size and proper margins for printing
+                      const doc = new jsPDF('p', 'mm', 'a4');
                       
                       // Use the report data for PDF generation
-                      const reportData = report.reportData;
+                      const reportData = report.reportData || report;
                       const clinicInfo = reportData.clinicInfo;
+                      const patient = reportData.patient;
+                      const scanParameters = reportData.scanParameters;
+                      const aiModelOutput = reportData.aiModelOutput;
+                      const clinicalNotes = reportData.clinicalNotes;
                       
-                      // Header
-                      doc.setFontSize(16);
+                      // Set margins for print-friendly layout
+                      const margin = 15;
+                      const pageWidth = doc.internal.pageSize.width;
+                      const contentWidth = pageWidth - (2 * margin);
+                      let y = margin;
+                      
+                      // Header with clinic information
+                      doc.setFontSize(18);
                       doc.setFont("helvetica", "bold");
-                      doc.text(clinicInfo.name, 105, 15, { align: 'center' });
+                      doc.text(clinicInfo.name, pageWidth / 2, y, { align: 'center' });
+                      y += 8;
                       
                       doc.setFontSize(12);
                       doc.setFont("helvetica", "normal");
-                      doc.text(clinicInfo.department, 105, 23, { align: 'center' });
-                      doc.text(clinicInfo.address, 105, 31, { align: 'center' });
+                      doc.text(clinicInfo.department, pageWidth / 2, y, { align: 'center' });
+                      y += 6;
+                      doc.text(clinicInfo.address, pageWidth / 2, y, { align: 'center' });
+                      y += 6;
+                      doc.text(`Phone: ${clinicInfo.phone} | Email: ${clinicInfo.email}`, pageWidth / 2, y, { align: 'center' });
+                      y += 6;
+                      doc.text(`Website: ${clinicInfo.website}`, pageWidth / 2, y, { align: 'center' });
                       
-                      // Patient Info Table
-                      doc.setFontSize(10);
-                      let y = 45;
-                      
-                      // Table borders and content
-                      doc.rect(10, y, 190, 25);
-                      doc.line(70, y, 70, y + 25); // Vertical line
-                      doc.line(130, y, 130, y + 25); // Vertical line
-                      doc.line(10, y + 8, 200, y + 8); // Horizontal line
-                      doc.line(10, y + 16, 200, y + 16); // Horizontal line
-                      
-                      doc.text("Patient name", 12, y + 6);
-                      doc.text(reportData.patient.name || "", 72, y + 6);
-                      doc.text(`Age/Sex: ${reportData.patient.age} Years / ${reportData.patient.sex || ""}`, 132, y + 6);
-                      
-                      doc.text("Patient ID", 12, y + 14);
-                      doc.text(reportData.patient.patientId || "", 72, y + 14);
-                      doc.text("Visit date", 132, y + 14);
-                      
-                      doc.text("Referred by", 12, y + 22);
-                      doc.text(reportData.patient.referredBy || "", 72, y + 22);
-                      doc.text(reportData.patient.visitDate || "", 155, y + 14);
-                      
-                      // LMP Info
-                      y += 30;
-                      doc.text(`LMP date: ${reportData.patient.lmp}, LMP EDD: ${reportData.patient.lmp}[${reportData.patient.gestationalAge}]`, 12, y);
+                      // Separator line
+                      y += 8;
+                      doc.line(margin, y, pageWidth - margin, y);
+                      y += 8;
                       
                       // Report Title
-                      y += 10;
-                      doc.setFontSize(14);
+                      doc.setFontSize(16);
                       doc.setFont("helvetica", "bold");
-                      doc.text("OB - First Trimester Scan Report", 105, y, { align: 'center' });
+                      doc.text("OBSTETRIC ULTRASOUND REPORT", pageWidth / 2, y, { align: 'center' });
+                      y += 10;
                       
-                      // Indications Section
-                      y += 15;
+                      // Patient Information Section
+                      doc.setFontSize(12);
+                      doc.setFont("helvetica", "bold");
+                      doc.text("PATIENT INFORMATION", margin, y);
+                      y += 6;
+                      
+                      doc.setFont("helvetica", "normal");
                       doc.setFontSize(10);
-                      doc.setFont("helvetica", "bold");
-                      doc.text("Indication(s)", 12, y);
-                      y += 5;
-                      doc.setFont("helvetica", "normal");
-                      doc.text(reportData.aiModelOutput.indications, 12, y);
-                      y += 5;
-                      doc.text(reportData.aiModelOutput.scanType, 12, y);
-                      y += 5;
-                      doc.text(`Route: ${reportData.aiModelOutput.route}`, 12, y);
-                      y += 5;
-                      doc.text(reportData.aiModelOutput.gestation, 12, y);
                       
-                      // Medical Notes
-                      y += 10;
+                      // Patient info in two columns
+                      const col1 = margin;
+                      const col2 = margin + contentWidth / 2;
+                      
+                      doc.text(`Name: ${patient.name}`, col1, y);
+                      doc.text(`Age: ${patient.age} Years`, col2, y);
+                      y += 5;
+                      
+                      doc.text(`Patient ID: ${patient.patientId}`, col1, y);
+                      doc.text(`Sex: ${patient.sex}`, col2, y);
+                      y += 5;
+                      
+                      doc.text(`Visit Date: ${patient.visitDate}`, col1, y);
+                      doc.text(`Referred By: ${patient.referredBy}`, col2, y);
+                      y += 5;
+                      
+                      doc.text(`LMP: ${patient.lmp}`, col1, y);
+                      doc.text(`Gestational Age: ${patient.gestationalAge}`, col2, y);
+                      y += 8;
+                      
+                      // Clinical Information
                       doc.setFont("helvetica", "bold");
-                      doc.text("Medical notes", 12, y);
-                      y += 5;
+                      doc.text("CLINICAL INFORMATION", margin, y);
+                      y += 6;
+                      
                       doc.setFont("helvetica", "normal");
-                      doc.text(`Blood group: A1B+ve Height: 159 cms Weight: 48.2kgs`, 12, y);
+                      doc.text(`Indications: ${aiModelOutput.indications}`, margin, y);
                       y += 5;
-                      doc.text(`Marital History: 4 years Consanguity: NCM`, 12, y);
+                      doc.text(`Scan Type: ${aiModelOutput.scanType}`, margin, y);
                       y += 5;
-                      doc.text(`Menstrual History: Regular`, 12, y);
+                      doc.text(`Route: ${aiModelOutput.route}`, margin, y);
                       y += 5;
-                      doc.text(`Gravida: 2 Para: 1 Live: 1 Abortion: 0`, 12, y);
-                  
+                      doc.text(`Gestation: ${aiModelOutput.gestation}`, margin, y);
+                      y += 8;
+                      
+                      // Scan Parameters
+                      doc.setFont("helvetica", "bold");
+                      doc.text("SCAN PARAMETERS", margin, y);
+                      y += 6;
+                      
+                      doc.setFont("helvetica", "normal");
+                      doc.text(`CRL: ${scanParameters.crl} mm`, col1, y);
+                      doc.text(`BPD: ${scanParameters.bpd} mm`, col2, y);
+                      y += 5;
+                      doc.text(`HC: ${scanParameters.hc} mm`, col1, y);
+                      doc.text(`AC: ${scanParameters.ac} mm`, col2, y);
+                      y += 5;
+                      doc.text(`FL: ${scanParameters.fl} mm`, col1, y);
+                      doc.text(`FHR: ${scanParameters.fhr} bpm`, col2, y);
+                      y += 5;
+                      doc.text(`Uterine Artery PI: ${scanParameters.uterineArteryPI}`, col1, y);
+                      y += 8;
                       
                       // Fetal Survey
-                      y += 5;
                       doc.setFont("helvetica", "bold");
-                      doc.text("Fetal Survey", 12, y);
-                      y += 5;
-                      doc.setFont("helvetica", "normal");
-                      doc.text(reportData.aiModelOutput.placentaLocation, 12, y);
-                      y += 5;
-                      doc.text(reportData.aiModelOutput.liquorStatus, 12, y);
-                      y += 5;
-                      doc.text(reportData.aiModelOutput.fetalActivity, 12, y);
-                      y += 5;
-                      doc.text(reportData.aiModelOutput.cardiacActivity, 12, y);
-                      y += 5;
-                      doc.text(`Fetal heart rate - ${reportData.scanParameters.fhr} bpm`, 12, y);
+                      doc.text("FETAL SURVEY", margin, y);
+                      y += 6;
                       
-                    
+                      doc.setFont("helvetica", "normal");
+                      doc.text(aiModelOutput.placentaLocation, margin, y);
+                      y += 5;
+                      doc.text(aiModelOutput.liquorStatus, margin, y);
+                      y += 5;
+                      doc.text(aiModelOutput.fetalActivity, margin, y);
+                      y += 5;
+                      doc.text(aiModelOutput.cardiacActivity, margin, y);
+                      y += 8;
                       
                       // AI Detected Structures
-                      y += 10;
                       doc.setFont("helvetica", "bold");
-                      doc.text("AI Detected Structures", 12, y);
-                      y += 5;
+                      doc.text("AI DETECTED STRUCTURES", margin, y);
+                      y += 6;
+                      
                       doc.setFont("helvetica", "normal");
-                      
-                      Object.entries(reportData.aiModelOutput.detectedStructures).forEach(([structure, confidence]) => {
-                        doc.text(`${structure}: ${confidence}% confidence`, 12, y);
-                        y += 5;
+                      Object.entries(aiModelOutput.detectedStructures).forEach(([structure, confidence]) => {
+                        doc.text(`${structure}: ${confidence}% confidence`, margin, y);
+                        y += 4;
                       });
+                      y += 6;
                       
-                      // Clinical Notes
-                      if (reportData.clinicalNotes) {
-                        y += 5;
-                        doc.setFont("helvetica", "bold");
-                        doc.text("Additional Clinical Notes", 12, y);
-                        y += 5;
-                        doc.setFont("helvetica", "normal");
-                        const lines = doc.splitTextToSize(reportData.clinicalNotes, 180);
-                        doc.text(lines, 12, y);
-                        y += lines.length * 5;
-                      }
-                      
-                      // Footer
-                      doc.setFontSize(8);
-                      doc.text(`Page #1 - ${new Date().toLocaleString()}`, 12, 280);
-                      doc.text(`FOR APPOINTMENTS KINDLY CONTACT US AT 7904513421 / 7358771733`, 105, 280, { align: 'center' });
-                      
-                      // Add image if available
-                      if (report.image) {
+                      // Add image beside AI Detected Structures
+                      const image = report.image || report.aiImage;
+                      if (image && image !== 'https://images.pexels.com/photos/356079/pexels-photo-356079.jpeg') {
                         try {
-                          doc.addImage(report.image, "JPEG", 130, 80, 60, 60);
+                          // Add image on the right side of AI Detected Structures
+                          const imageWidth = 80;
+                          const imageHeight = 60;
+                          const imageX = pageWidth - margin - imageWidth;
+                          const imageY = y - 45; // Position higher, at the beginning of AI structures
+                          doc.addImage(image, "JPEG", imageX, imageY, imageWidth, imageHeight);
+                          
+                          // Add image caption
+                          doc.setFontSize(8);
+                          doc.setFont("helvetica", "bold");
+                          doc.text("SCAN IMAGE", imageX + (imageWidth / 2), imageY + imageHeight + 3, { align: 'center' });
                         } catch (error) {
-                          console.log("Could not add image to PDF");
+                          // console.log("Could not add image to PDF");
                         }
                       }
                       
-                      doc.save(`fetal_scan_report_${report.patientId || report.id}.pdf`);
+                      // Clinical Notes
+                      if (clinicalNotes && clinicalNotes.trim()) {
+                        doc.setFont("helvetica", "bold");
+                        doc.text("CLINICAL NOTES", margin, y);
+                        y += 6;
+                        
+                        doc.setFont("helvetica", "normal");
+                        const notesLines = doc.splitTextToSize(clinicalNotes, contentWidth);
+                        doc.text(notesLines, margin, y);
+                        y += notesLines.length * 4;
+                        y += 6;
+                      }
+                      
+                      // Footer
+                      y += 10;
+                      doc.line(margin, y, pageWidth - margin, y);
+                      y += 5;
+                      
+                      doc.setFontSize(8);
+                      doc.setFont("helvetica", "normal");
+                      doc.text(`Report generated on: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`, margin, y);
+                      doc.text(`Report ID: ${report.id || report.timestamp}`, pageWidth - margin, y, { align: 'right' });
+                      y += 4;
+                      doc.text("FOR APPOINTMENTS CONTACT: 7904513421 / 7358771733", pageWidth / 2, y, { align: 'center' });
+                      
+                      // Save the PDF
+                      const fileName = `Fetal_Scan_Report_${patient.name || patient.patientId || 'Unknown'}_${new Date().toISOString().split('T')[0]}.pdf`;
+                      doc.save(fileName);
                     });
                   }}
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-xs lg:text-sm font-medium transition-colors flex items-center justify-center"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs lg:text-sm font-medium transition-colors flex items-center justify-center"
                 >
                   <Download className="h-3 w-3 mr-1" />
                   PDF
+                </button>
+                <button 
+                  onClick={() => deleteReport(report.id || report.timestamp)}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-xs lg:text-sm font-medium transition-colors flex items-center justify-center"
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Delete
                 </button>
               </div>
             </div>
