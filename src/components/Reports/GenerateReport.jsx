@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Download, Eye, Upload, QrCode, X, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 const GenerateReport = () => {
+  const { user } = useAuth();
+
   const saveDraftToArchive = () => {
   const archive = {
     patient,
@@ -77,6 +80,79 @@ const GenerateReport = () => {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [clinicalWarnings, setClinicalWarnings] = useState([]);
+
+  const saveAsFinalReport = () => {
+    if (!validateForm()) {
+      alert('Please fix the validation errors before saving the final report.');
+      return;
+    }
+
+    const finalReport = {
+      id: Date.now().toString(),
+      reportData: {
+        patient,
+        scanParameters,
+        clinicInfo,
+        clinicalNotes,
+        aiModelOutput
+      },
+      status: 'Reviewed',
+      createdBy: user?.name || 'Unknown User',
+      createdAt: new Date().toISOString(),
+      lastModified: new Date().toISOString()
+    };
+
+    // Save to final reports
+    const existingFinalReports = JSON.parse(localStorage.getItem('fetalFinalReports') || '[]');
+    existingFinalReports.push(finalReport);
+    localStorage.setItem('fetalFinalReports', JSON.stringify(existingFinalReports));
+
+    // Clear the current draft
+    localStorage.removeItem('fetalReportDraft');
+
+    // Reset form
+    setPatient({
+      id: '',
+      name: '',
+      age: 0,
+      patientId: '',
+      lmp: '',
+      gestationalAge: '',
+      sex: '',
+      visitDate: new Date().toISOString().split('T')[0],
+      referredBy: ''
+    });
+    setScanParameters({
+      crl: 0,
+      bpd: 0,
+      hc: 0,
+      ac: 0,
+      fl: 0,
+      fhr: 0,
+      uterineArteryPI: 0,
+    });
+    setClinicalNotes('');
+    setAiModelOutput({
+      detectedStructures: {
+        palate: 52.96,
+        'nasal skin': 52.79,
+        'nasal bone': 48.64,
+        'CM': 41.83,
+        'nasal tip': 27.39
+      },
+      indications: 'First trimester screening',
+      scanType: 'Real time B-mode ultrasonography of gravid uterus done',
+      route: 'Transabdominal and Transvaginal',
+      gestation: 'Single intrauterine gestation',
+      fetalActivity: 'Fetal activity present',
+      cardiacActivity: 'Cardiac activity present',
+      placentaLocation: 'Placenta - Anterior',
+      liquorStatus: 'Liquor - Normal'
+    });
+    setHasSavedDraft(false);
+
+    alert('Report saved as final report successfully!');
+  };
 
   // Clinical warning system
   const checkClinicalWarnings = () => {
