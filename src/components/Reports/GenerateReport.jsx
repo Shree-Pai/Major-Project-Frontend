@@ -226,29 +226,10 @@ const GenerateReport = () => {
     return errors;
   };
 
-  const validateScanParameters = () => {
-    const errors = {};
-    
-    if (!scanParameters.fhr || scanParameters.fhr === 0 || scanParameters.fhr < 100 || scanParameters.fhr > 200) {
-      errors.fhr = 'Fetal heart rate is required and should be between 100-200 bpm';
-    }
-    
-    if (scanParameters.crl && (scanParameters.crl < 0 || scanParameters.crl > 100)) {
-      errors.crl = 'CRL should be between 0-100 mm';
-    }
-    
-    if (scanParameters.bpd && (scanParameters.bpd < 0 || scanParameters.bpd > 100)) {
-      errors.bpd = 'BPD should be between 0-100 mm';
-    }
-    
-    return errors;
-  };
-
   const validateForm = () => {
     const patientErrors = validatePatientData();
-    const scanErrors = validateScanParameters();
     
-    const allErrors = { ...patientErrors, ...scanErrors };
+    const allErrors = { ...patientErrors};
     setValidationErrors(allErrors);
     
     return Object.keys(allErrors).length === 0;
